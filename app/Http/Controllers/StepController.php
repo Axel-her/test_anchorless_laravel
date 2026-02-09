@@ -12,50 +12,54 @@ class StepController extends Controller
      * List all steps with the authenticated user's completion status.
      */
     public function index(Request $request): JsonResponse
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        abort_if(!$user, 401, 'Unauthenticated');
+    $steps = Step::orderBy('order')->get()->map(function (Step $step) use ($user) {
+        $pivot = $user->steps()->where('steps.id', $step->id)->first()?->pivot;
 
-        // Eager load only the pivot for this user
-        $steps = Step::with(['users' => function ($query) use ($user) {
-            $query->where('users.id', $user->id);
-        }])
-            ->orderBy('order')
-            ->get();
+        return [
+            'id' => $step->id,
+            'title' => $step->title,
+            'description' => $step->description,
+            'order' => $step->order,
+            'required_documents' => $step->required_documents,
+            'status' => $pivot?->status,
+        ];
+    });
 
-        $data = $steps->map(function (Step $step) {
-            $status = $step->users->first()?->pivot->status;
+    return response()->json(['data' => $steps]);
+}
 
-            return [
-                'id' => $step->id,
-                'title' => $step->title,
-                'description' => $step->description,
-                'order' => $step->order,
-                'required_documents' => $step->required_documents,
-                'status' => $status,
-            ];
-        });
 
-        return response()->json(['data' => $data]);
-    }
+    public function show(Request $request, Step $step): JsonResponse
+{
+    $user = $request->user();
 
-    /**
-     * Mark a step as completed for the authenticated user.
-     */
+    $pivot = $user->steps()->where('steps.id', $step->id)->first()?->pivot;
+
+    return response()->json([
+        'data' => [
+            'id' => $step->id,
+            'title' => $step->title,
+            'description' => $step->description,
+            'order' => $step->order,
+            'required_documents' => $step->required_documents,
+            'status' => $pivot?->status,
+        ]
+    ]);
+}
+
+
     public function complete(Request $request, Step $step): JsonResponse
-    {
-        $user = $request->user();
+        {
+            $user = $request->user();
 
-        abort_if(!$user, 401, 'Unauthenticated');
+            $user->steps()->syncWithoutDetaching([
+                $step->id => ['status' => 'completed'],
+            ]);
 
-        $user->steps()->syncWithoutDetaching([
-            $step->id => ['status' => 'completed'],
-        ]);
+            return response()->json(['message' => 'Step completed']);
+        }
 
-        return response()->json([
-            'message' => 'Step marked as completed',
-            'step_id' => $step->id,
-        ]);
-    }
 }
